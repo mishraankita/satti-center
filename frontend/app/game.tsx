@@ -395,6 +395,7 @@ const styles = StyleSheet.create({
   },
   boardContent: {
     padding: SPACING.md,
+    paddingBottom: SPACING.xl,
   },
   playersRow: {
     flexDirection: 'row',
@@ -468,13 +469,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
     backgroundColor: COLORS.surface,
-    gap: SPACING.sm,
+    gap: SPACING.xs,
   },
   aiThinkingText: {
     color: COLORS.textSecondary,
-    fontSize: 14,
+    fontSize: 12,
   },
   playingOverlay: {
     position: 'absolute',

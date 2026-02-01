@@ -52,11 +52,18 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
         horizontal 
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.cardsContainer}
+        style={styles.scrollView}
       >
         {sortedCards.map((card, index) => {
           const playable = isCardPlayable(card);
           return (
-            <View key={`${card.rank}-${card.suit}-${index}`} style={styles.cardWrapper}>
+            <View 
+              key={`${card.rank}-${card.suit}-${index}`} 
+              style={[
+                styles.cardWrapper,
+                playable && isMyTurn && styles.cardWrapperPlayable
+              ]}
+            >
               <Card
                 rank={card.rank}
                 suit={card.suit}
@@ -77,7 +84,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderTopWidth: 1,
     borderTopColor: COLORS.cardBorder,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
   },
   header: {
     flexDirection: 'row',
@@ -95,11 +102,20 @@ const styles = StyleSheet.create({
     color: COLORS.highlight,
     fontSize: 12,
   },
+  scrollView: {
+    overflow: 'visible',
+  },
   cardsContainer: {
     paddingHorizontal: SPACING.md,
+    paddingTop: 20,
+    paddingBottom: SPACING.xs,
     gap: SPACING.xs,
+    alignItems: 'flex-end',
   },
   cardWrapper: {
     marginRight: -15,
+  },
+  cardWrapperPlayable: {
+    transform: [{ translateY: -20 }],
   },
 });

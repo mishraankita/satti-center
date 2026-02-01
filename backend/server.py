@@ -113,9 +113,17 @@ def find_starting_player(players):
                 return i
     return 0
 
-def get_playable_cards(board_state, player_hand):
+def get_playable_cards(board_state, player_hand, is_first_move=False):
     """Determine which cards a player can play"""
     playable = []
+    
+    # On the first move, only 7 of hearts can be played
+    if is_first_move:
+        for card in player_hand:
+            if card["rank"] == "7" and card["suit"] == "hearts":
+                playable.append(card)
+                return playable
+        return playable  # Empty if player doesn't have 7 of hearts (shouldn't happen)
     
     for card in player_hand:
         suit = card["suit"]
@@ -247,7 +255,8 @@ def pass_turn_logic(game_state, player_id):
 
 def ai_choose_card(game_state, player, difficulty="medium"):
     """AI logic to choose which card to play"""
-    playable = get_playable_cards(game_state["board"], player["hand"])
+    is_first_move = game_state.get("turn_number", 1) == 1
+    playable = get_playable_cards(game_state["board"], player["hand"], is_first_move)
     
     if not playable:
         return None
@@ -705,7 +714,8 @@ async def get_playable_cards_endpoint(room_code: str, player_id: str):
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
     
-    playable = get_playable_cards(game_state["board"], player["hand"])
+    is_first_move = game_state.get("turn_number", 1) == 1
+    playable = get_playable_cards(game_state["board"], player["hand"], is_first_move)
     
     return {"playable_cards": playable}
 
