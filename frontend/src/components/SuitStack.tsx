@@ -55,7 +55,10 @@ export const SuitStack: React.FC<SuitStackProps> = ({
           </View>
         ) : (
           sortedCards.map((card, index) => (
-            <View key={`${card.rank}-${card.suit}`} style={styles.cardWrapper}>
+            <View 
+              key={`${card.rank}-${card.suit}`} 
+              style={[styles.cardWrapper, index === 0 && styles.firstCard]}
+            >
               <Card rank={card.rank} suit={card.suit} small />
             </View>
           ))
@@ -87,10 +90,14 @@ const styles = StyleSheet.create({
   },
   cardsContainer: {
     paddingHorizontal: SPACING.sm,
-    gap: -20, // Overlap cards
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   cardWrapper: {
-    marginLeft: -20,
+    marginLeft: -15,
+  },
+  firstCard: {
+    marginLeft: 0,
   },
   emptySlot: {
     width: CARD_DIMENSIONS.width * 0.7,
