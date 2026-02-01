@@ -21,6 +21,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Card } from '../src/components/Card';
 import { SuitStack } from '../src/components/SuitStack';
 import { PlayerHand } from '../src/components/PlayerHand';
+import { useSoundManager, SoundManager } from '../src/lib/SoundManager';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -28,8 +29,14 @@ export default function GameScreen() {
   const { code, ai } = useLocalSearchParams<{ code: string; ai?: string }>();
   const [isPlaying, setIsPlaying] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const hasPlayedDealSound = useRef(false);
+  const previousWinner = useRef<string | null>(null);
   const isAIGame = ai === 'true';
+  
+  // Sound manager hook
+  const sounds = useSoundManager();
   
   const { 
     playerId, 
@@ -81,6 +88,35 @@ export default function GameScreen() {
     }
   }, [code, playerId, lastUpdateTime]);
   
+  // Sound: Play deal sequence when game first loads
+  useEffect(() => {
+    if (gameState && !hasPlayedDealSound.current) {
+      hasPlayedDealSound.current = true;
+      const cardCount = myHand.length || 13;
+      sounds.playDeal(cardCount);
+      
+      // Start ambient music after deal
+      setTimeout(() => {
+        sounds.startAmbient();
+      }, 2000);
+    }
+  }, [gameState]);
+  
+  // Sound: Play victory when winner changes
+  useEffect(() => {
+    if (winner && winner !== previousWinner.current) {
+      previousWinner.current = winner;
+      sounds.playVictory();
+    }
+  }, [winner]);
+  
+  // Cleanup sounds on unmount
+  useEffect(() => {
+    return () => {
+      SoundManager.cleanup();
+    };
+  }, []);
+  
   // Setup polling and Supabase realtime
   useEffect(() => {
     if (!code) return;
@@ -117,10 +153,16 @@ export default function GameScreen() {
       setGameState(result.game_state);
       setLastUpdateTime(new Date().toISOString());
       
+      // Sound: Play card sound - special for 7s!
+      const isSeven = card.rank === '7';
+      sounds.playCard(isSeven);
+      
       // Refresh playable cards
       const playable = await getPlayableCards(code, playerId);
       setPlayableCards(playable.playable_cards);
     } catch (e: any) {
+      // Sound: Block/error sound
+      SoundManager.playSound('passThud');
       Alert.alert('Invalid Move', e.response?.data?.detail || 'Cannot play this card');
     } finally {
       setIsPlaying(false);
@@ -135,6 +177,9 @@ export default function GameScreen() {
       const result = await passTurn(code, playerId);
       setGameState(result.game_state);
       setLastUpdateTime(new Date().toISOString());
+      
+      // Sound: Pass thud
+      sounds.playPass();
     } catch (e: any) {
       Alert.alert('Cannot Pass', e.response?.data?.detail || 'You have playable cards');
     } finally {
@@ -148,9 +193,18 @@ export default function GameScreen() {
       'Are you sure you want to leave?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Leave', style: 'destructive', onPress: () => router.replace('/') }
+        { text: 'Leave', style: 'destructive', onPress: () => {
+          sounds.stopAmbient();
+          router.replace('/');
+        }}
       ]
     );
+  };
+  
+  const toggleMute = () => {
+    const newMuted = !isMuted;
+    setIsMuted(newMuted);
+    sounds.setMuted(newMuted);
   };
   
   const handlePlayAgain = () => {
@@ -198,9 +252,18 @@ export default function GameScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleLeave}>
-          <Ionicons name="close" size={24} color={COLORS.textPrimary} />
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={handleLeave}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleMute} style={styles.muteButton}>
+            <Ionicons 
+              name={isMuted ? 'volume-mute' : 'volume-high'} 
+              size={20} 
+              color={isMuted ? COLORS.textMuted : COLORS.textPrimary} 
+            />
+          </TouchableOpacity>
+        </View>
         
         <View style={styles.turnInfo}>
           <Text style={styles.turnText}>
@@ -342,6 +405,14 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.cardBorder,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  muteButton: {
+    padding: 4,
   },
   turnInfo: {
     flexDirection: 'row',
