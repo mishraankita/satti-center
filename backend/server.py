@@ -124,16 +124,22 @@ def get_playable_cards(board_state, player_hand):
         
         suit_state = board_state.get(suit, {"low": None, "high": None, "has_seven": False})
         
+        # 7 can always be played if not already on board
         if rank == "7" and not suit_state.get("has_seven", False):
             playable.append(card)
             continue
         
+        # If 7 is on the board, check if this card can be played
         if suit_state.get("has_seven", False):
-            low = suit_state.get("low", 6)
-            high = suit_state.get("high", 8)
+            # low tracks the lowest card played (starts at 7)
+            # high tracks the highest card played (starts at 7)
+            low = suit_state.get("low", 7)
+            high = suit_state.get("high", 7)
             
+            # Can play one below the current low (going towards Ace)
             if rank_value == low - 1:
                 playable.append(card)
+            # Can play one above the current high (going towards King)
             elif rank_value == high + 1:
                 playable.append(card)
     
@@ -193,8 +199,8 @@ def play_card_logic(game_state, player_id, card):
         if suit_state["has_seven"]:
             raise ValueError("7 already played for this suit")
         suit_state["has_seven"] = True
-        suit_state["low"] = 6
-        suit_state["high"] = 8
+        suit_state["low"] = 7  # Start at 7, next valid low play is 6
+        suit_state["high"] = 7  # Start at 7, next valid high play is 8
         suit_state["cards"].append(card)
     else:
         if not suit_state["has_seven"]:
