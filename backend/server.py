@@ -369,13 +369,23 @@ async def create_room(request: CreateRoomRequest):
         "created_at": datetime.utcnow()
     }
     
-    await db.game_rooms.insert_one(room)
+    result = await db.game_rooms.insert_one(room)
+    
+    # Return room without _id for JSON serialization
+    room_response = {
+        "room_code": room_code,
+        "host_name": request.host_name,
+        "players": [host_player],
+        "game_state": None,
+        "status": "waiting",
+        "created_at": room["created_at"].isoformat()
+    }
     
     return {
         "room_code": room_code,
         "player_id": player_id,
         "player": host_player,
-        "room": room
+        "room": room_response
     }
 
 @api_router.post("/rooms/join")
@@ -412,11 +422,21 @@ async def join_room(request: JoinRoomRequest):
         {"$set": {"players": room["players"]}}
     )
     
+    # Format room for response
+    room_response = {
+        "room_code": room["room_code"],
+        "host_name": room["host_name"],
+        "players": room["players"],
+        "game_state": room.get("game_state"),
+        "status": room["status"],
+        "created_at": room["created_at"].isoformat() if isinstance(room["created_at"], datetime) else room["created_at"]
+    }
+    
     return {
         "room_code": room["room_code"],
         "player_id": player_id,
         "player": new_player,
-        "room": room
+        "room": room_response
     }
 
 @api_router.get("/rooms/{room_code}")
@@ -426,8 +446,15 @@ async def get_room(room_code: str):
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
     
-    room["_id"] = str(room["_id"])
-    return room
+    # Format for JSON serialization
+    return {
+        "room_code": room["room_code"],
+        "host_name": room["host_name"],
+        "players": room["players"],
+        "game_state": room.get("game_state"),
+        "status": room["status"],
+        "created_at": room["created_at"].isoformat() if isinstance(room["created_at"], datetime) else room["created_at"]
+    }
 
 @api_router.post("/rooms/{room_code}/start")
 async def start_game(room_code: str):
