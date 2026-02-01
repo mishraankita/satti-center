@@ -4,7 +4,7 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
-  timeout: 120000, // 2 min for image generation
+  timeout: 120000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -19,6 +19,7 @@ export interface Player {
   id: string;
   name: string;
   is_host: boolean;
+  is_ai?: boolean;
   hand: Card[];
 }
 
@@ -51,6 +52,8 @@ export interface Room {
   players: Player[];
   game_state: GameState | null;
   status: 'waiting' | 'playing' | 'finished';
+  is_ai_game?: boolean;
+  updated_at?: string;
   created_at: string;
 }
 
@@ -81,6 +84,19 @@ export const getCardImage = async (rank: string): Promise<{ rank: string; image_
 
 export const createRoom = async (hostName: string): Promise<{ room_code: string; player_id: string; player: Player; room: Room }> => {
   const response = await api.post('/rooms/create', { host_name: hostName });
+  return response.data;
+};
+
+export const createAIGame = async (
+  playerName: string, 
+  numAiPlayers: number = 1, 
+  difficulty: string = 'medium'
+): Promise<{ room_code: string; player_id: string; player: Player; game_state: GameState; is_ai_game: boolean }> => {
+  const response = await api.post('/rooms/create-ai-game', { 
+    player_name: playerName, 
+    num_ai_players: numAiPlayers,
+    difficulty 
+  });
   return response.data;
 };
 

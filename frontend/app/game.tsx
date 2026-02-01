@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -15,7 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SUIT_SYMBOLS } from '../src/constants/theme';
 import { useGameStore } from '../src/store/gameStore';
 import { getRoom, playCard, passTurn, getPlayableCards } from '../src/lib/api';
+import { subscribeToRoom, unsubscribeFromRoom } from '../src/lib/supabase';
 import type { Card as CardType } from '../src/lib/api';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Card } from '../src/components/Card';
 import { SuitStack } from '../src/components/SuitStack';
 import { PlayerHand } from '../src/components/PlayerHand';
@@ -23,8 +25,11 @@ import { PlayerHand } from '../src/components/PlayerHand';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function GameScreen() {
-  const { code } = useLocalSearchParams<{ code: string }>();
+  const { code, ai } = useLocalSearchParams<{ code: string; ai?: string }>();
   const [isPlaying, setIsPlaying] = useState(false);
+  const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const isAIGame = ai === 'true';
   
   const { 
     playerId, 
@@ -37,7 +42,6 @@ export default function GameScreen() {
     setSyncing
   } = useGameStore();
   
-  // Get current player info
   const currentPlayerIndex = gameState?.current_player_index ?? 0;
   const currentPlayer = gameState?.players[currentPlayerIndex];
   const isMyTurn = currentPlayer?.id === playerId;
@@ -46,41 +50,63 @@ export default function GameScreen() {
   const winner = gameState?.winner;
   const winnerPlayer = gameState?.players.find(p => p.id === winner);
   
-  // Poll for game updates
-  useEffect(() => {
+  // Fetch game state with smart polling
+  const fetchGameState = useCallback(async () => {
     if (!code) return;
     
-    let interval: ReturnType<typeof setInterval>;
-    
-    const fetchGameState = async () => {
-      try {
-        setSyncing(true);
-        const roomData = await getRoom(code);
+    try {
+      setSyncing(true);
+      const roomData = await getRoom(code);
+      
+      // Only update if data has changed
+      const newUpdateTime = roomData.updated_at || roomData.created_at;
+      if (newUpdateTime !== lastUpdateTime) {
+        setLastUpdateTime(newUpdateTime);
         setRoom(code, roomData);
         
         if (roomData.game_state) {
           setGameState(roomData.game_state);
         }
-        
-        // Fetch playable cards for current player
-        if (roomData.game_state && playerId) {
-          const playable = await getPlayableCards(code, playerId);
-          setPlayableCards(playable.playable_cards);
-        }
-      } catch (e) {
-        console.error('Failed to fetch game state:', e);
-      } finally {
-        setSyncing(false);
       }
-    };
+      
+      // Fetch playable cards
+      if (roomData.game_state && playerId) {
+        const playable = await getPlayableCards(code, playerId);
+        setPlayableCards(playable.playable_cards);
+      }
+    } catch (e) {
+      console.error('Failed to fetch game state:', e);
+    } finally {
+      setSyncing(false);
+    }
+  }, [code, playerId, lastUpdateTime]);
+  
+  // Setup polling and Supabase realtime
+  useEffect(() => {
+    if (!code) return;
     
+    // Initial fetch
     fetchGameState();
-    interval = setInterval(fetchGameState, 1500); // Poll every 1.5 seconds
+    
+    // Setup Supabase realtime subscription
+    channelRef.current = subscribeToRoom(code, (payload) => {
+      if (payload.game_state) {
+        setGameState(payload.game_state);
+        setLastUpdateTime(new Date().toISOString());
+      }
+    });
+    
+    // Polling interval - faster for AI games
+    const pollInterval = isAIGame ? 800 : 1500;
+    const interval = setInterval(fetchGameState, pollInterval);
     
     return () => {
-      if (interval) clearInterval(interval);
+      clearInterval(interval);
+      if (channelRef.current) {
+        unsubscribeFromRoom(channelRef.current);
+      }
     };
-  }, [code, playerId]);
+  }, [code, isAIGame]);
   
   const handlePlayCard = async (card: CardType) => {
     if (!code || !playerId || isPlaying) return;
@@ -89,6 +115,7 @@ export default function GameScreen() {
     try {
       const result = await playCard(code, playerId, card);
       setGameState(result.game_state);
+      setLastUpdateTime(new Date().toISOString());
       
       // Refresh playable cards
       const playable = await getPlayableCards(code, playerId);
@@ -107,6 +134,7 @@ export default function GameScreen() {
     try {
       const result = await passTurn(code, playerId);
       setGameState(result.game_state);
+      setLastUpdateTime(new Date().toISOString());
     } catch (e: any) {
       Alert.alert('Cannot Pass', e.response?.data?.detail || 'You have playable cards');
     } finally {
@@ -143,6 +171,7 @@ export default function GameScreen() {
   // Winner screen
   if (winner) {
     const isWinner = winner === playerId;
+    const isAIWinner = winnerPlayer?.is_ai;
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.winnerContainer}>
@@ -155,7 +184,7 @@ export default function GameScreen() {
             {isWinner ? 'You Win!' : `${winnerPlayer?.name} Wins!`}
           </Text>
           <Text style={styles.winnerSubtitle}>
-            {isWinner ? 'Congratulations!' : 'Better luck next time!'}
+            {isWinner ? 'Congratulations!' : isAIWinner ? 'The AI was too smart this time!' : 'Better luck next time!'}
           </Text>
           <TouchableOpacity style={styles.playAgainButton} onPress={handlePlayAgain}>
             <Text style={styles.playAgainText}>Play Again</Text>
@@ -177,6 +206,11 @@ export default function GameScreen() {
           <Text style={styles.turnText}>
             {isMyTurn ? "Your Turn" : `${currentPlayer?.name}'s Turn`}
           </Text>
+          {currentPlayer?.is_ai && (
+            <View style={styles.aiBadge}>
+              <Ionicons name="hardware-chip" size={12} color={COLORS.textPrimary} />
+            </View>
+          )}
           {isSyncing && (
             <View style={styles.syncBadge}>
               <ActivityIndicator size="small" color={COLORS.primary} />
@@ -186,6 +220,7 @@ export default function GameScreen() {
         
         <View style={styles.roomBadge}>
           <Text style={styles.roomCode}>{code}</Text>
+          {isAIGame && <Text style={styles.aiLabel}>AI</Text>}
         </View>
       </View>
       
@@ -211,6 +246,9 @@ export default function GameScreen() {
               <Text style={styles.playerStatusName} numberOfLines={1}>
                 {player.name}
               </Text>
+              {player.is_ai && (
+                <Ionicons name="hardware-chip" size={12} color={COLORS.textMuted} style={styles.aiIcon} />
+              )}
               <Text style={styles.cardCount}>{player.hand.length}</Text>
             </View>
           ))}
@@ -256,6 +294,14 @@ export default function GameScreen() {
               <Text style={styles.passText}>Pass Turn</Text>
             )}
           </TouchableOpacity>
+        </View>
+      )}
+      
+      {/* AI Thinking indicator */}
+      {!isMyTurn && currentPlayer?.is_ai && (
+        <View style={styles.aiThinkingContainer}>
+          <ActivityIndicator size="small" color={COLORS.primary} />
+          <Text style={styles.aiThinkingText}>{currentPlayer.name} is thinking...</Text>
         </View>
       )}
       
@@ -307,19 +353,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  aiBadge: {
+    backgroundColor: COLORS.success,
+    padding: 4,
+    borderRadius: 4,
+  },
   syncBadge: {
     marginLeft: SPACING.xs,
   },
   roomBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: COLORS.surface,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     borderRadius: 4,
+    gap: SPACING.xs,
   },
   roomCode: {
     color: COLORS.textSecondary,
     fontSize: 12,
     fontWeight: '600',
+  },
+  aiLabel: {
+    color: COLORS.success,
+    fontSize: 10,
+    fontWeight: '700',
   },
   actionBanner: {
     backgroundColor: COLORS.surfaceLight,
@@ -371,6 +430,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     maxWidth: 60,
   },
+  aiIcon: {
+    marginLeft: 2,
+  },
   cardCount: {
     color: COLORS.textMuted,
     fontSize: 12,
@@ -402,6 +464,18 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.6,
   },
+  aiThinkingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    gap: SPACING.sm,
+  },
+  aiThinkingText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+  },
   playingOverlay: {
     position: 'absolute',
     top: 0,
@@ -428,6 +502,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: COLORS.textSecondary,
     marginTop: SPACING.sm,
+    textAlign: 'center',
   },
   playAgainButton: {
     backgroundColor: COLORS.primary,

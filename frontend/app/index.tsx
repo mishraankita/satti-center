@@ -16,18 +16,19 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../src/constants/theme';
 import { useGameStore } from '../src/store/gameStore';
-import { createRoom, joinRoom, getCardConfig, getAllCardImages } from '../src/lib/api';
+import { createRoom, joinRoom, createAIGame, getCardConfig, getAllCardImages } from '../src/lib/api';
 
 export default function LobbyScreen() {
   const [playerName, setPlayerName] = useState('');
   const [roomCode, setRoomCode] = useState('');
-  const [mode, setMode] = useState<'menu' | 'host' | 'join'>('menu');
+  const [mode, setMode] = useState<'menu' | 'host' | 'join' | 'ai'>('menu');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiPlayers, setAiPlayers] = useState(1);
+  const [aiDifficulty, setAiDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   
-  const { setPlayer, setRoom, setCardConfig, addCardImage, reset } = useGameStore();
+  const { setPlayer, setRoom, setGameState, setCardConfig, addCardImage, reset } = useGameStore();
   
-  // Reset store on mount
   useEffect(() => {
     reset();
     loadCardConfig();
@@ -37,8 +38,6 @@ export default function LobbyScreen() {
     try {
       const config = await getCardConfig();
       setCardConfig(config);
-      
-      // Load cached card images
       const images = await getAllCardImages();
       images.forEach(img => addCardImage(img.rank, img.image_base64));
     } catch (e) {
@@ -92,6 +91,27 @@ export default function LobbyScreen() {
     }
   };
   
+  const handlePlayAI = async () => {
+    if (!playerName.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const result = await createAIGame(playerName.trim(), aiPlayers, aiDifficulty);
+      setPlayer(result.player_id, playerName.trim());
+      setGameState(result.game_state);
+      router.push(`/game?code=${result.room_code}&ai=true`);
+    } catch (e: any) {
+      setError(e.response?.data?.detail || 'Failed to start AI game');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   const renderMenu = () => (
     <View style={styles.menuContainer}>
       <View style={styles.logoContainer}>
@@ -102,6 +122,14 @@ export default function LobbyScreen() {
       <Text style={styles.description}>A journey from Earth's core to deep space</Text>
       
       <View style={styles.buttonContainer}>
+        <TouchableOpacity 
+          style={styles.aiButton}
+          onPress={() => setMode('ai')}
+        >
+          <Ionicons name="hardware-chip-outline" size={24} color={COLORS.textPrimary} />
+          <Text style={styles.buttonText}>Play vs AI</Text>
+        </TouchableOpacity>
+        
         <TouchableOpacity 
           style={styles.primaryButton}
           onPress={() => setMode('host')}
@@ -216,6 +244,90 @@ export default function LobbyScreen() {
     </View>
   );
   
+  const renderAIForm = () => (
+    <View style={styles.formContainer}>
+      <TouchableOpacity style={styles.backButton} onPress={() => setMode('menu')}>
+        <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
+      </TouchableOpacity>
+      
+      <Text style={styles.formTitle}>Play vs AI</Text>
+      <Text style={styles.formSubtitle}>Practice against computer opponents</Text>
+      
+      <View style={styles.inputContainer}>
+        <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} />
+        <TextInput
+          style={styles.input}
+          placeholder="Your Display Name"
+          placeholderTextColor={COLORS.textMuted}
+          value={playerName}
+          onChangeText={setPlayerName}
+          maxLength={15}
+          autoCapitalize="words"
+        />
+      </View>
+      
+      {/* AI Players Selection */}
+      <Text style={styles.optionLabel}>Number of AI Opponents</Text>
+      <View style={styles.optionRow}>
+        {[1, 2, 3].map((num) => (
+          <TouchableOpacity
+            key={num}
+            style={[
+              styles.optionButton,
+              aiPlayers === num && styles.optionButtonActive
+            ]}
+            onPress={() => setAiPlayers(num)}
+          >
+            <Text style={[
+              styles.optionText,
+              aiPlayers === num && styles.optionTextActive
+            ]}>{num}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      
+      {/* Difficulty Selection */}
+      <Text style={styles.optionLabel}>Difficulty</Text>
+      <View style={styles.optionRow}>
+        {(['easy', 'medium', 'hard'] as const).map((diff) => (
+          <TouchableOpacity
+            key={diff}
+            style={[
+              styles.optionButton,
+              styles.difficultyButton,
+              aiDifficulty === diff && styles.optionButtonActive,
+              diff === 'easy' && aiDifficulty === diff && styles.easyActive,
+              diff === 'hard' && aiDifficulty === diff && styles.hardActive,
+            ]}
+            onPress={() => setAiDifficulty(diff)}
+          >
+            <Text style={[
+              styles.optionText,
+              aiDifficulty === diff && styles.optionTextActive
+            ]}>{diff.charAt(0).toUpperCase() + diff.slice(1)}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      
+      {error && <Text style={styles.errorText}>{error}</Text>}
+      
+      <TouchableOpacity 
+        style={[styles.aiButton, isLoading && styles.buttonDisabled]}
+        onPress={handlePlayAI}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <ActivityIndicator color={COLORS.textPrimary} />
+        ) : (
+          <>
+            <Ionicons name="play" size={24} color={COLORS.textPrimary} />
+            <Text style={styles.buttonText}>Start Game</Text>
+          </>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+  
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
@@ -229,6 +341,7 @@ export default function LobbyScreen() {
           {mode === 'menu' && renderMenu()}
           {mode === 'host' && renderHostForm()}
           {mode === 'join' && renderJoinForm()}
+          {mode === 'ai' && renderAIForm()}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -288,6 +401,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: 12,
+    gap: SPACING.sm,
+  },
+  aiButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.success,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
     borderRadius: 12,
@@ -363,5 +486,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: SPACING.md,
     textAlign: 'center',
+  },
+  optionLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  optionButton: {
+    flex: 1,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: COLORS.cardBorder,
+    alignItems: 'center',
+  },
+  difficultyButton: {
+    flex: 1,
+  },
+  optionButtonActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '20',
+  },
+  easyActive: {
+    borderColor: COLORS.success,
+    backgroundColor: COLORS.success + '20',
+  },
+  hardActive: {
+    borderColor: COLORS.error,
+    backgroundColor: COLORS.error + '20',
+  },
+  optionText: {
+    color: COLORS.textSecondary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  optionTextActive: {
+    color: COLORS.textPrimary,
   },
 });
