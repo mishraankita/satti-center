@@ -264,13 +264,37 @@ class GameTester:
     def test_invalid_play(self) -> bool:
         """Test invalid card play (should be rejected)"""
         try:
-            # Get next player
+            # Get current player
             current_player_index = self.game_state["current_player_index"]
             current_player = self.game_state["players"][current_player_index]
             player_id = current_player["id"]
             
-            # Try to play a card that's not valid (e.g., 9 of hearts when only 6 or 8 should be playable)
-            invalid_card = {"rank": "9", "suit": "hearts"}
+            # Get playable cards first
+            playable_response = self.session.get(f"{BASE_URL}/rooms/{self.room_code}/playable/{player_id}")
+            if playable_response.status_code != 200:
+                self.log("❌ Could not get playable cards for invalid play test", "ERROR")
+                return False
+                
+            playable_cards = playable_response.json()["playable_cards"]
+            
+            # Find a card in player's hand that is NOT in playable cards
+            invalid_card = None
+            for card in current_player["hand"]:
+                is_playable = any(
+                    pc["rank"] == card["rank"] and pc["suit"] == card["suit"] 
+                    for pc in playable_cards
+                )
+                if not is_playable:
+                    invalid_card = card
+                    break
+            
+            if not invalid_card:
+                # If all cards are playable, try a card the player doesn't have
+                invalid_card = {"rank": "K", "suit": "hearts"}
+                # Make sure this card is not in player's hand
+                while any(card["rank"] == invalid_card["rank"] and card["suit"] == invalid_card["suit"] 
+                         for card in current_player["hand"]):
+                    invalid_card = {"rank": "Q", "suit": "spades"}  # Try different card
             
             payload = {
                 "room_code": self.room_code,
@@ -285,7 +309,8 @@ class GameTester:
                 self.log("✅ Invalid play correctly rejected")
                 return True
             else:
-                self.log(f"❌ Invalid play not rejected - status: {response.status_code}", "ERROR")
+                self.log(f"❌ Invalid play not rejected - status: {response.status_code}, card: {invalid_card}", "ERROR")
+                self.log(f"Response: {response.text}", "ERROR")
                 return False
                 
         except Exception as e:
