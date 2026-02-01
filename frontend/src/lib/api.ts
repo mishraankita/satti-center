@@ -1,6 +1,31 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+// Get the host IP from Expo's debugger host (works on physical devices)
+const getApiUrl = () => {
+  if (process.env.EXPO_PUBLIC_BACKEND_URL) {
+    return process.env.EXPO_PUBLIC_BACKEND_URL;
+  }
+  
+  // For web, use localhost
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000';
+  }
+  
+  // For mobile devices, use the Metro bundler host IP
+  const debuggerHost = Constants.expoConfig?.hostUri;
+  if (debuggerHost) {
+    // Extract IP from "192.168.1.224:8082" format
+    const hostIP = debuggerHost.split(':')[0];
+    return `http://${hostIP}:8000`;
+  }
+  
+  // Fallback to localhost
+  return 'http://localhost:8000';
+};
+
+const API_URL = getApiUrl();
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,

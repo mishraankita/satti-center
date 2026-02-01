@@ -48,10 +48,10 @@ CARD_RANKS = {
 }
 
 SUIT_COLORS = {
-    "hearts": {"name": "Hearts", "color": "#E0115F", "symbol": "\u2665"},
-    "spades": {"name": "Spades", "color": "#00FFFF", "symbol": "\u2660"},
-    "diamonds": {"name": "Diamonds", "color": "#FFD700", "symbol": "\u2666"},
-    "clubs": {"name": "Clubs", "color": "#228B22", "symbol": "\u2663"}
+    "hearts": {"name": "Hearts", "color": "#E0115F", "symbol": "H"},
+    "spades": {"name": "Spades", "color": "#00FFFF", "symbol": "S"},
+    "diamonds": {"name": "Diamonds", "color": "#FFD700", "symbol": "D"},
+    "clubs": {"name": "Clubs", "color": "#228B22", "symbol": "C"}
 }
 
 AI_NAMES = ["Bot Alpha", "Bot Beta", "Bot Gamma"]
@@ -165,7 +165,7 @@ def initialize_game_state(players):
         "current_player_index": starting_player,
         "players": players,
         "winner": None,
-        "last_action": f"{players[starting_player]['name']} goes first (has 7\u2665)",
+        "last_action": f"{players[starting_player]['name']} goes first (has 7 of Hearts)",
         "turn_number": 1
     }
 
@@ -217,11 +217,11 @@ def play_card_logic(game_state, player_id, card):
     
     if len(player["hand"]) == 0:
         game_state["winner"] = player["id"]
-        game_state["last_action"] = f"{player['name']} wins! \ud83c\udf89"
+        game_state["last_action"] = f"{player['name']} wins!"
     else:
         game_state["current_player_index"] = (current_index + 1) % len(players)
         game_state["turn_number"] += 1
-        game_state["last_action"] = f"{player['name']} played {rank}{SUIT_COLORS[suit]['symbol']}"
+        game_state["last_action"] = f"{player['name']} played {rank} of {SUIT_COLORS[suit]['name']}"
     
     return game_state
 
@@ -300,49 +300,56 @@ def ai_choose_card(game_state, player, difficulty="medium"):
 
 async def process_ai_turn(room_code: str):
     """Process AI player's turn"""
-    room = await db.game_rooms.find_one({"room_code": room_code})
-    if not room or not room.get("game_state"):
-        return
-    
-    game_state = room["game_state"]
-    if game_state.get("winner"):
-        return
-    
-    current_index = game_state["current_player_index"]
-    current_player = game_state["players"][current_index]
-    
-    if not current_player.get("is_ai", False):
-        return
-    
-    # Add small delay for realism
-    await asyncio.sleep(1.5)
-    
-    difficulty = room.get("ai_difficulty", "medium")
-    chosen_card = ai_choose_card(game_state, current_player, difficulty)
-    
-    if chosen_card:
-        game_state = play_card_logic(game_state, current_player["id"], chosen_card)
-    else:
-        game_state = pass_turn_logic(game_state, current_player["id"])
-    
-    status = "finished" if game_state.get("winner") else "playing"
-    
-    await db.game_rooms.update_one(
-        {"room_code": room_code},
-        {"$set": {
-            "game_state": game_state,
-            "players": game_state["players"],
-            "status": status,
-            "updated_at": datetime.utcnow()
-        }}
-    )
-    
-    # Continue processing if next player is also AI
-    if not game_state.get("winner"):
-        next_index = game_state["current_player_index"]
-        next_player = game_state["players"][next_index]
-        if next_player.get("is_ai", False):
-            await process_ai_turn(room_code)
+    try:
+        room = await db.game_rooms.find_one({"room_code": room_code})
+        if not room or not room.get("game_state"):
+            logging.warning(f"AI turn: Room {room_code} not found or no game state")
+            return
+        
+        game_state = room["game_state"]
+        if game_state.get("winner"):
+            return
+        
+        current_index = game_state["current_player_index"]
+        current_player = game_state["players"][current_index]
+        
+        if not current_player.get("is_ai", False):
+            return
+        
+        # Add small delay for realism
+        await asyncio.sleep(1.5)
+        
+        difficulty = room.get("ai_difficulty", "medium")
+        chosen_card = ai_choose_card(game_state, current_player, difficulty)
+        
+
+        if chosen_card:
+            game_state = play_card_logic(game_state, current_player["id"], chosen_card)
+        else:
+            game_state = pass_turn_logic(game_state, current_player["id"])
+        
+        status = "finished" if game_state.get("winner") else "playing"
+        
+        await db.game_rooms.update_one(
+            {"room_code": room_code},
+            {"$set": {
+                "game_state": game_state,
+                "players": game_state["players"],
+                "status": status,
+                "updated_at": datetime.utcnow()
+            }}
+        )
+        
+        logging.info(f"AI turn: Updated room {room_code}, next player index: {game_state['current_player_index']}")
+        
+        # Continue processing if next player is also AI
+        if not game_state.get("winner"):
+            next_index = game_state["current_player_index"]
+            next_player = game_state["players"][next_index]
+            if next_player.get("is_ai", False):
+                await process_ai_turn(room_code)
+    except Exception as e:
+        logging.error(f"AI turn error for room {room_code}: {str(e)}", exc_info=True)
 
 # Routes
 @api_router.get("/")
@@ -714,7 +721,7 @@ app.add_middleware(
 )
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)

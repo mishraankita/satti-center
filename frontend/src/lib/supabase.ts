@@ -1,9 +1,15 @@
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// Create a supabase client (uses placeholders if env vars not set - for development/preview)
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey);
+
+// Check if Supabase is properly configured
+export const isSupabaseConfigured = (): boolean => {
+  return supabaseUrl !== 'https://placeholder.supabase.co' && supabaseKey !== 'placeholder-key';
+};
 
 // Realtime subscription helper for game rooms
 export const subscribeToRoom = (

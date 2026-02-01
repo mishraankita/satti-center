@@ -75,7 +75,7 @@ export default function GameScreen() {
         setPlayableCards(playable.playable_cards);
       }
     } catch (e) {
-      console.error('Failed to fetch game state:', e);
+      // Silently fail - polling will retry
     } finally {
       setSyncing(false);
     }
