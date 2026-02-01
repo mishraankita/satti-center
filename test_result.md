@@ -155,39 +155,48 @@ backend:
 
   - task: "Play Card endpoint"
     implemented: true
-    working: "NA"
+    working: true
     file: "server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "POST /api/rooms/{code}/play - needs testing"
+      - working: true
+        agent: "testing"
+        comment: "Comprehensive testing completed. All game logic working correctly: 7♥ starts first, 7s can start new suits, sequential building (6→5→4→3→2→A down, 8→9→10→J→Q→K up), invalid plays properly rejected, turn management working. Tested with multiple players and game flows."
 
   - task: "Pass Turn endpoint"
     implemented: true
-    working: "NA"
+    working: true
     file: "server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "POST /api/rooms/{code}/pass - needs testing"
+      - working: true
+        agent: "testing"
+        comment: "Pass turn logic working correctly. Players with playable cards cannot pass (properly rejected with 400 error). Players without playable cards can pass successfully. Turn advances correctly after pass."
 
   - task: "AI Image Generation endpoint"
     implemented: true
-    working: "NA"
+    working: true
     file: "server.py"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "POST /api/generate-card-image using OpenAI gpt-image-1 - needs testing"
+      - working: true
+        agent: "testing"
+        comment: "AI image generation working correctly. Successfully generates card images using OpenAI gpt-image-1 model with custom prompts for each rank. Images are cached in database to avoid regeneration. GET /api/card-images endpoint also working to retrieve all generated images."
 
 frontend:
   - task: "Lobby Screen"
