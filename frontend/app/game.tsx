@@ -20,7 +20,7 @@ import type { Card as CardType } from '../src/lib/api';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Card } from '../src/components/Card';
 import { SuitStack } from '../src/components/SuitStack';
-import { PlayerHand } from '../src/components/PlayerHand';
+import { PlayerHand, PlayerHandRef } from '../src/components/PlayerHand';
 import { useSoundManager, SoundManager } from '../src/lib/SoundManager';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -30,9 +30,21 @@ export default function GameScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [shouldAnimateDeal, setShouldAnimateDeal] = useState(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const hasPlayedDealSound = useRef(false);
   const previousWinner = useRef<string | null>(null);
+  const playerHandRef = useRef<PlayerHandRef>(null);
+  const lastAttemptedCard = useRef<CardType | null>(null);
+  // Track which suits have had their 7 played (for detecting new 7s)
+  const previousSevensPlayed = useRef<Record<string, boolean>>({
+    hearts: false,
+    spades: false,
+    diamonds: false,
+    clubs: false,
+  });
+  // Track last action to detect passes by other players
+  const previousLastAction = useRef<string | null>(null);
   const isAIGame = ai === 'true';
   
   // Sound manager hook
@@ -88,17 +100,22 @@ export default function GameScreen() {
     }
   }, [code, playerId, lastUpdateTime]);
   
-  // Sound: Play deal sequence when game first loads
+  // Sound & Animation: Play deal sequence when game first loads
   useEffect(() => {
     if (gameState && !hasPlayedDealSound.current) {
       hasPlayedDealSound.current = true;
       const cardCount = myHand.length || 13;
+      
+      // Trigger deal animation
+      setShouldAnimateDeal(true);
+      
+      // Play deal sound
       sounds.playDeal(cardCount);
       
-      // Start ambient music after deal
+      // Start ambient music after deal animation completes
       setTimeout(() => {
         sounds.startAmbient();
-      }, 2000);
+      }, cardCount * 100 + 1000); // Wait for staggered animations + buffer
     }
   }, [gameState]);
   
@@ -109,6 +126,54 @@ export default function GameScreen() {
       sounds.playVictory();
     }
   }, [winner]);
+  
+  // Sound: Play sevenMagic when ANY player plays a 7
+  useEffect(() => {
+    if (!gameState?.board) return;
+    
+    // Check each suit for newly played 7s
+    const suits = ['hearts', 'spades', 'diamonds', 'clubs'] as const;
+    let newSevenPlayed = false;
+    
+    for (const suit of suits) {
+      const currentHasSeven = gameState.board[suit]?.has_seven ?? false;
+      const previousHasSeven = previousSevensPlayed.current[suit];
+      
+      // Detect if a 7 was just played in this suit
+      if (currentHasSeven && !previousHasSeven) {
+        newSevenPlayed = true;
+      }
+      
+      // Update tracking
+      previousSevensPlayed.current[suit] = currentHasSeven;
+    }
+    
+    // Play the sevenMagic sound if a new 7 was detected
+    if (newSevenPlayed) {
+      sounds.playSpecialSeven();
+    }
+  }, [gameState?.board]);
+  
+  // Sound: Play pass sound when ANY player passes (detected via last_action)
+  useEffect(() => {
+    if (!gameState?.last_action) return;
+    
+    const currentAction = gameState.last_action;
+    const previousAction = previousLastAction.current;
+    
+    // Only trigger if the action changed
+    if (currentAction !== previousAction) {
+      // Check if the action is a pass (contains "passed" or "pass")
+      const isPassAction = currentAction.toLowerCase().includes('pass');
+      
+      if (isPassAction) {
+        sounds.playPass();
+      }
+      
+      // Update tracking
+      previousLastAction.current = currentAction;
+    }
+  }, [gameState?.last_action]);
   
   // Cleanup sounds on unmount
   useEffect(() => {
@@ -147,6 +212,9 @@ export default function GameScreen() {
   const handlePlayCard = async (card: CardType) => {
     if (!code || !playerId || isPlaying) return;
     
+    // Store the card being attempted for error animation
+    lastAttemptedCard.current = card;
+    
     setIsPlaying(true);
     try {
       const result = await playCard(code, playerId, card);
@@ -161,11 +229,17 @@ export default function GameScreen() {
       const playable = await getPlayableCards(code, playerId);
       setPlayableCards(playable.playable_cards);
     } catch (e: any) {
+      // Animation: Shake the card that failed
+      if (lastAttemptedCard.current && playerHandRef.current) {
+        playerHandRef.current.shakeCard(lastAttemptedCard.current);
+      }
+      
       // Sound: Block/error sound
       SoundManager.playSound('passThud');
       Alert.alert('Invalid Move', e.response?.data?.detail || 'Cannot play this card');
     } finally {
       setIsPlaying(false);
+      lastAttemptedCard.current = null;
     }
   };
   
@@ -178,8 +252,7 @@ export default function GameScreen() {
       setGameState(result.game_state);
       setLastUpdateTime(new Date().toISOString());
       
-      // Sound: Pass thud
-      sounds.playPass();
+      // Sound is handled by the last_action detection useEffect
     } catch (e: any) {
       Alert.alert('Cannot Pass', e.response?.data?.detail || 'You have playable cards');
     } finally {
@@ -337,10 +410,12 @@ export default function GameScreen() {
       
       {/* Player Hand */}
       <PlayerHand
+        ref={playerHandRef}
         cards={myHand}
         playableCards={playableCards}
         onCardPress={handlePlayCard}
         isMyTurn={isMyTurn}
+        shouldAnimateDeal={shouldAnimateDeal}
       />
       
       {/* Pass Button */}

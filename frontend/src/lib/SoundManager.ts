@@ -36,15 +36,12 @@ class SoundManagerClass {
         shouldDuckAndroid: true,
       });
       
-      console.log('🔊 Audio mode configured (expo-av legacy)');
-      
       // Preload key sounds
       await this.preloadSounds();
       
       this.isInitialized = true;
-      console.log('🔊 SoundManager ready with audio');
     } catch (error) {
-      console.error('SoundManager init failed:', error);
+      // Silently fail init
       this.isInitialized = true;
     }
   }
@@ -57,15 +54,13 @@ class SoundManagerClass {
     
     for (const name of soundsToPreload) {
       try {
-        console.log(`Preloading: ${name}`);
         const { sound } = await Audio.Sound.createAsync(
           SOUND_ASSETS[name],
           { shouldPlay: false, volume: SFX_VOLUME }
         );
         this.loadedSounds.set(name, sound);
-        console.log(`✓ Preloaded: ${name}`);
       } catch (error) {
-        console.warn(`✗ Failed to preload ${name}:`, error);
+        // Silently fail preload
       }
     }
   }
@@ -73,7 +68,7 @@ class SoundManagerClass {
   /**
    * Play a sound
    */
-  async playAudio(name: SoundName, volume: number = SFX_VOLUME): Promise<void> {
+  async playAudio(name: SoundName, volume: number = SFX_VOLUME, rate: number = 1.0): Promise<void> {
     if (this.isMuted) return;
 
     try {
@@ -84,18 +79,20 @@ class SoundManagerClass {
         if (status.isLoaded) {
           await preloaded.setPositionAsync(0);
           await preloaded.setVolumeAsync(volume);
+          await preloaded.setRateAsync(rate, true); // true = pitch correction
           await preloaded.playAsync();
-          console.log(`🔊 Played (preloaded): ${name}`);
           return;
         }
       }
 
       // Create fresh sound
-      console.log(`Creating fresh sound: ${name}`);
       const { sound } = await Audio.Sound.createAsync(
         SOUND_ASSETS[name],
-        { shouldPlay: true, volume }
+        { shouldPlay: false, volume, rate, shouldCorrectPitch: true }
       );
+      
+      // Start playback
+      await sound.playAsync();
       
       // Auto cleanup
       sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
@@ -103,11 +100,8 @@ class SoundManagerClass {
           sound.unloadAsync().catch(() => {});
         }
       });
-      
-      console.log(`🔊 Played (fresh): ${name}`);
     } catch (error) {
-      console.error(`Audio play failed for ${name}:`, error);
-      // Fallback to haptics
+      // Fallback to haptics on audio failure
       await this.triggerHaptic('medium');
     }
   }
@@ -161,8 +155,6 @@ class SoundManagerClass {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    
-    console.log(`🔊 Deal sequence: ${cardCount} cards`);
 
     // Play shuffle sound
     await this.playAudio('riffle', 0.5);
@@ -174,15 +166,14 @@ class SoundManagerClass {
    */
   async playCardPlace(isSeven: boolean = false): Promise<void> {
     if (this.isMuted) return;
-    
-    console.log(`🔊 Card place (seven: ${isSeven})`);
 
     if (isSeven) {
       // Special 7 - magic chime + thud
       await this.playAudio('tableHit', 0.5);
       await this.triggerHaptic('medium');
       await this.delay(100);
-      await this.playAudio('sevenMagic', 0.4);
+      // Play sevenMagic at 2x speed (half duration)
+      await this.playAudio('sevenMagic', 0.4, 2.0);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
       await this.playAudio('tableHit', 0.6);
@@ -203,7 +194,6 @@ class SoundManagerClass {
   async playPassThud(): Promise<void> {
     if (this.isMuted) return;
     
-    console.log('🔊 Pass thud');
     await this.playAudio('passThud', 0.4);
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }
@@ -214,7 +204,6 @@ class SoundManagerClass {
   async playVictory(): Promise<void> {
     if (this.isMuted) return;
     
-    console.log('🔊 Victory!');
     await this.playAudio('sparkle', 0.7);
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await this.delay(200);
@@ -224,7 +213,7 @@ class SoundManagerClass {
   // ==================== AMBIENT (placeholder) ====================
 
   async startAmbient(): Promise<void> {
-    console.log('🎵 Ambient music placeholder');
+    // Ambient music placeholder
   }
 
   async stopAmbient(): Promise<void> {}
@@ -237,7 +226,6 @@ class SoundManagerClass {
 
   setMuted(muted: boolean): void {
     this.isMuted = muted;
-    console.log(`🔊 Muted: ${muted}`);
   }
 
   getMuted(): boolean {
@@ -256,7 +244,6 @@ class SoundManagerClass {
     }
     this.loadedSounds.clear();
     this.isInitialized = false;
-    console.log('🔊 Cleaned up');
   }
 
   private delay(ms: number): Promise<void> {

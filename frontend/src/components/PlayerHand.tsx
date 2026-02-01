@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { COLORS, SPACING } from '../constants/theme';
-import { Card } from './Card';
+import { AnimatedCard, AnimatedCardRef } from './AnimatedCard';
 import type { Card as CardType } from '../lib/api';
 
 interface PlayerHandProps {
@@ -9,19 +9,62 @@ interface PlayerHandProps {
   playableCards: CardType[];
   onCardPress: (card: CardType) => void;
   isMyTurn: boolean;
+  shouldAnimateDeal?: boolean;
 }
 
-export const PlayerHand: React.FC<PlayerHandProps> = ({ 
+export interface PlayerHandRef {
+  shakeCard: (card: CardType) => void;
+}
+
+export const PlayerHand = forwardRef<PlayerHandRef, PlayerHandProps>(({ 
   cards, 
   playableCards, 
   onCardPress,
-  isMyTurn
-}) => {
+  isMyTurn,
+  shouldAnimateDeal = false,
+}, ref) => {
+  // Track if we've already animated the deal
+  const [hasAnimatedDeal, setHasAnimatedDeal] = useState(false);
+  
+  // Store refs for each card
+  const cardRefs = useRef<Map<string, AnimatedCardRef>>(new Map());
+  
   const isCardPlayable = (card: CardType) => {
     return playableCards.some(
       p => p.rank === card.rank && p.suit === card.suit
     );
   };
+  
+  // Get card key for ref storage
+  const getCardKey = (card: CardType) => `${card.rank}-${card.suit}`;
+  
+  // Set ref callback
+  const setCardRef = useCallback((card: CardType, cardRef: AnimatedCardRef | null) => {
+    const key = getCardKey(card);
+    if (cardRef) {
+      cardRefs.current.set(key, cardRef);
+    } else {
+      cardRefs.current.delete(key);
+    }
+  }, []);
+  
+  // Expose shake method via ref
+  useImperativeHandle(ref, () => ({
+    shakeCard: (card: CardType) => {
+      const key = getCardKey(card);
+      const cardRef = cardRefs.current.get(key);
+      if (cardRef) {
+        cardRef.triggerShake();
+      }
+    },
+  }));
+  
+  // Enable deal animation when cards first load
+  useEffect(() => {
+    if (cards.length > 0 && shouldAnimateDeal && !hasAnimatedDeal) {
+      setHasAnimatedDeal(true);
+    }
+  }, [cards.length, shouldAnimateDeal, hasAnimatedDeal]);
   
   // Sort cards by suit then rank
   const sortedCards = [...cards].sort((a, b) => {
@@ -56,20 +99,23 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
       >
         {sortedCards.map((card, index) => {
           const playable = isCardPlayable(card);
+          const key = getCardKey(card);
+          
           return (
             <View 
-              key={`${card.rank}-${card.suit}-${index}`} 
-              style={[
-                styles.cardWrapper,
-                playable && isMyTurn && styles.cardWrapperPlayable
-              ]}
+              key={`${key}-${index}`} 
+              style={styles.cardWrapper}
             >
-              <Card
-                rank={card.rank}
-                suit={card.suit}
-                onPress={playable && isMyTurn ? () => onCardPress(card) : undefined}
+              <AnimatedCard
+                ref={(cardRef) => setCardRef(card, cardRef)}
+                card={card}
+                index={index}
+                isPlayable={playable}
+                isMyTurn={isMyTurn}
                 disabled={!playable || !isMyTurn}
-                isPlayable={playable && isMyTurn}
+                onPress={playable && isMyTurn ? () => onCardPress(card) : undefined}
+                shouldAnimateDeal={shouldAnimateDeal && !hasAnimatedDeal}
+                dealDelay={index * 100} // Stagger by 100ms
               />
             </View>
           );
@@ -77,7 +123,9 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({
       </ScrollView>
     </View>
   );
-};
+});
+
+PlayerHand.displayName = 'PlayerHand';
 
 const styles = StyleSheet.create({
   container: {
@@ -107,7 +155,7 @@ const styles = StyleSheet.create({
   },
   cardsContainer: {
     paddingHorizontal: SPACING.md,
-    paddingTop: 20,
+    paddingTop: 30, // Extra space for lift animation
     paddingBottom: SPACING.xs,
     gap: SPACING.xs,
     alignItems: 'flex-end',
@@ -115,7 +163,6 @@ const styles = StyleSheet.create({
   cardWrapper: {
     marginRight: -15,
   },
-  cardWrapperPlayable: {
-    transform: [{ translateY: -20 }],
-  },
 });
+
+export default PlayerHand;
